@@ -209,6 +209,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Fatal:', err);
-  process.exit(1);
+  // Non-fatal — server runs fine without icons (SVG placeholders are used instead)
+  console.error('[icons] download failed:', err?.message ?? err);
 });

@@ -25,14 +25,16 @@ COPY backend/package.json backend/package-lock.json* ./backend/
 RUN cd backend && npm install --omit=dev --prefer-offline
 
 # Copy application code
-COPY backend/  ./backend/
-COPY scripts/  ./scripts/
+COPY backend/        ./backend/
+COPY scripts/        ./scripts/
+COPY docker/entrypoint.sh ./entrypoint.sh
 
 # Copy built frontend
 COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 
-# Data volume (SQLite DB + icons)
-RUN mkdir -p /data/icons && chown -R arcapp:arcapp /data
+# Pre-create data dirs with correct ownership so the volume mount inherits them
+RUN mkdir -p /data/icons && chown -R arcapp:arcapp /data && \
+    chmod +x /app/entrypoint.sh
 
 # Drop to non-root
 USER arcapp
@@ -44,8 +46,7 @@ ENV NODE_ENV=production \
 
 EXPOSE 3001
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://localhost:3001/api/blueprints/categories || exit 1
 
-# Entrypoint: download icons (only missing ones) then start server
-CMD ["sh", "-c", "node /app/scripts/download-icons.js && node /app/backend/src/server.js"]
+ENTRYPOINT ["/app/entrypoint.sh"]
