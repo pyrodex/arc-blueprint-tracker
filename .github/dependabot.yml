@@ -1,0 +1,50 @@
+version: 2
+updates:
+  # Backend npm dependencies
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    groups:
+      backend-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # Major version bumps reviewed manually
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Frontend npm dependencies
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"

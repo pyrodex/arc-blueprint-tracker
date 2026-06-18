@@ -11,16 +11,43 @@ on:
     branches:
       - main
       - master
+  schedule:
+    # Re-scan the published image weekly for new CVEs (Sundays at 02:00 UTC)
+    - cron: "0 2 * * 0"
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ── Dependency audit ─────────────────────────────────────────────────────────
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Audit backend
+        working-directory: backend
+        run: npm install --ignore-scripts && npm audit --audit-level=high
+
+      - name: Audit frontend
+        working-directory: frontend
+        run: npm install --ignore-scripts && npm audit --audit-level=high
+
   # ── Build each platform on a native runner ───────────────────────────────────
   build:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
+    needs: audit
     permissions:
       contents: read
       packages: write
@@ -140,11 +167,50 @@ jobs:
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
 
+  # ── Trivy container vulnerability scan ───────────────────────────────────────
+  scan:
+    name: Trivy scan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    needs: merge
+    permissions:
+      contents: read
+      packages: read
+      security-events: write   # upload SARIF to GitHub Security tab
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"          # report findings; don't fail the build
+          ignore-unfixed: true    # skip vulns with no fix available yet
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container
+
   # ── Generate and commit lock files if missing ─────────────────────────────────
   generate-lockfiles:
     name: Generate lock files
     runs-on: ubuntu-latest
-    needs: merge
+    needs: [merge, scan]
     if: |
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
