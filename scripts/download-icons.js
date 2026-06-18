@@ -2,26 +2,29 @@
 'use strict';
 
 /**
- * Downloads blueprint icons from ARC Raiders wiki sources.
+ * Downloads blueprint icons from the ARC Raiders Fandom wiki.
  *
  * Strategy:
- * 1. Query the MediaWiki API on arcraiders.wiki for each blueprint image
- * 2. Download found images to DATA_DIR/icons/<slug>.png
+ * 1. Batch-query arc-raiders.fandom.com MediaWiki API for blueprint images
+ *    — tries "File:[Name] Blueprint.png" then "File:[Name].png" per blueprint
+ * 2. Download resolved images to DATA_DIR/icons/<slug>.png
  * 3. For any not found, generate a clean SVG placeholder
  *
  * Usage:
  *   DATA_DIR=/data node scripts/download-icons.js [--force]
  */
 
-const https = require('https');
-const http  = require('http');
-const path  = require('path');
-const fs    = require('fs');
+const https   = require('https');
+const http    = require('http');
+const path    = require('path');
+const fs      = require('fs');
 const { URL } = require('url');
 
 const DATA_DIR  = process.env.DATA_DIR || path.join(__dirname, '../data');
 const ICONS_DIR = path.join(DATA_DIR, 'icons');
 const FORCE     = process.argv.includes('--force');
+
+const FANDOM_API = 'https://arc-raiders.fandom.com/api.php';
 
 fs.mkdirSync(ICONS_DIR, { recursive: true });
 
@@ -30,94 +33,100 @@ function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-function fetchUrl(urlStr) {
+function fetchUrl(urlStr, retries = 2) {
   return new Promise((resolve, reject) => {
-    const parsed = new URL(urlStr);
-    const lib = parsed.protocol === 'https:' ? https : http;
+    const parsed  = new URL(urlStr);
+    const lib     = parsed.protocol === 'https:' ? https : http;
     const options = {
       hostname: parsed.hostname,
-      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-      path: parsed.pathname + parsed.search,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'ARC-Blueprint-Tracker/1.0 (icon downloader; https://github.com/user/arc-blueprint-tracker)',
+      port:     parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path:     parsed.pathname + parsed.search,
+      method:   'GET',
+      headers:  {
+        'User-Agent': 'ARC-Blueprint-Tracker/1.0 (icon downloader; https://github.com/pyrodex/arc-blueprint-tracker)',
         Accept: 'application/json,image/*,*/*',
       },
-      timeout: 15000,
+      timeout: 20000,
     };
 
-    const req = lib.request(options, (res) => {
+    const req = lib.request(options, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return fetchUrl(res.headers.location).then(resolve).catch(reject);
+        return fetchUrl(res.headers.location, retries).then(resolve).catch(reject);
       }
       const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
+      res.on('data', c => chunks.push(c));
       res.on('end', () => resolve({ statusCode: res.statusCode, body: Buffer.concat(chunks), headers: res.headers }));
     });
 
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.on('error', err => {
+      if (retries > 0) fetchUrl(urlStr, retries - 1).then(resolve).catch(reject);
+      else reject(err);
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      const err = new Error('Request timed out');
+      if (retries > 0) fetchUrl(urlStr, retries - 1).then(resolve).catch(reject);
+      else reject(err);
+    });
     req.end();
   });
 }
 
 async function fetchJson(url) {
   const { statusCode, body } = await fetchUrl(url);
-  if (statusCode !== 200) throw new Error(`HTTP ${statusCode}`);
+  if (statusCode !== 200) throw new Error(`HTTP ${statusCode} for ${url}`);
   return JSON.parse(body.toString());
-}
-
-// ── Wiki API image resolution ──────────────────────────────────────────────────
-// MediaWiki API: get the direct image URL for a file page title
-async function resolveWikiImageUrl(wikiBase, fileTitle) {
-  const apiUrl = `${wikiBase}/api.php?action=query&titles=${encodeURIComponent(fileTitle)}&prop=imageinfo&iiprop=url&format=json&redirects=1`;
-  try {
-    const data = await fetchJson(apiUrl);
-    const pages = data?.query?.pages ?? {};
-    for (const page of Object.values(pages)) {
-      const url = page?.imageinfo?.[0]?.url;
-      if (url) return url;
-    }
-  } catch {
-    // fall through
-  }
-  return null;
-}
-
-// Various file name patterns the wiki might use
-function guessFileNames(name) {
-  const titleCase = name.replace(/\b\w/g, c => c.toUpperCase());
-  const candidates = [
-    `File:Blueprint ${titleCase}.png`,
-    `File:Blueprint_${titleCase.replace(/ /g, '_')}.png`,
-    `File:${titleCase} Blueprint.png`,
-    `File:${titleCase}.png`,
-    `File:${titleCase.replace(/ /g, '_')}.png`,
-    `File:Arc Raiders ${titleCase}.png`,
-  ];
-  return [...new Set(candidates)];
-}
-
-// Fextralife CDN URL patterns (tried before MediaWiki API as they're more reliable)
-function fextralifeUrls(name, slug) {
-  const base = 'https://arcraiders.wiki.fextralife.com/file/Arc-Raiders';
-  return [
-    `${base}/${slug}-arc-raiders.png`,
-    `${base}/${slug}.png`,
-    `${base}/${slug}-blueprint-arc-raiders.png`,
-    `${base}/${name.toLowerCase().replace(/[^a-z0-9]+/g, '%20')}.png`,
-  ];
 }
 
 async function downloadImage(url, destPath) {
   const { statusCode, body, headers } = await fetchUrl(url);
   if (statusCode !== 200) throw new Error(`HTTP ${statusCode}`);
   const ct = headers['content-type'] ?? '';
-  if (!ct.startsWith('image/')) throw new Error(`Unexpected content-type: ${ct}`);
+  if (!ct.startsWith('image/')) throw new Error(`Not an image: ${ct}`);
+  if (body.length < 100) throw new Error(`Suspiciously small response (${body.length} bytes)`);
   fs.writeFileSync(destPath, body);
 }
 
-// ── SVG Placeholder ────────────────────────────────────────────────────────────
+// ── Fandom MediaWiki batch query ───────────────────────────────────────────────
+// Build candidate file titles for a blueprint name (in priority order)
+function candidateTitles(name) {
+  return [
+    `File:${name} Blueprint.png`,
+    `File:${name} Blueprint.webp`,
+    `File:${name}.png`,
+    `File:${name}.webp`,
+  ];
+}
+
+// Query up to 50 titles at once; returns map of title → image URL
+async function batchResolveImages(titles) {
+  const params = new URLSearchParams({
+    action: 'query',
+    prop:   'imageinfo',
+    iiprop: 'url',
+    format: 'json',
+    titles: titles.join('|'),
+  });
+
+  const data = await fetchJson(`${FANDOM_API}?${params}`);
+  const result = {};
+
+  for (const page of Object.values(data?.query?.pages ?? {})) {
+    if (page.missing !== '' && page.imageinfo?.[0]?.url) {
+      // normalise title to match what we queried
+      result[page.title] = page.imageinfo[0].url;
+    }
+  }
+
+  // Handle Fandom's title normalisation (spaces ↔ underscores)
+  for (const norm of data?.query?.normalized ?? []) {
+    if (result[norm.to]) result[norm.from] = result[norm.to];
+  }
+
+  return result;
+}
+
+// ── SVG placeholder ────────────────────────────────────────────────────────────
 const CATEGORY_COLORS = {
   weapons:    { bg: '#1a0a0a', border: '#ef4444', text: '#ef4444', emoji: '🔫' },
   mods:       { bg: '#0a0f1a', border: '#3b82f6', text: '#3b82f6', emoji: '🔧' },
@@ -129,13 +138,8 @@ const CATEGORY_COLORS = {
 };
 
 function generateSvgPlaceholder(name, category) {
-  const c = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.crafting;
-  const initials = name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map(w => w[0]?.toUpperCase() ?? '')
-    .join('');
-
+  const c        = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.crafting;
+  const initials = name.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="8" fill="${c.bg}" stroke="${c.border}" stroke-width="1.5" stroke-opacity="0.6"/>
   <text x="32" y="26" text-anchor="middle" font-family="system-ui,sans-serif" font-size="22" fill="${c.text}" opacity="0.9">${c.emoji}</text>
@@ -144,90 +148,110 @@ function generateSvgPlaceholder(name, category) {
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
-const WIKI_BASE = 'https://arcraiders.wiki';
-
-// All blueprints (duplicated here so the script runs standalone without DB)
 const BLUEPRINTS = require('../backend/src/blueprints');
 
-async function processBlueprint(bp) {
-  const slug = slugify(bp.name);
-  const destPng = path.join(ICONS_DIR, `${slug}.png`);
-  const destSvg = path.join(ICONS_DIR, `${slug}.svg`);
-
-  if (!FORCE && (fs.existsSync(destPng) || fs.existsSync(destSvg))) {
-    return { name: bp.name, status: 'skip' };
-  }
-
-  // 1. Try Fextralife direct URLs first (faster, no API call)
-  for (const url of fextralifeUrls(bp.name, slug)) {
-    try {
-      await downloadImage(url, destPng);
-      return { name: bp.name, status: 'downloaded', url };
-    } catch {
-      // try next
-    }
-  }
-
-  // 2. Fall back to MediaWiki API on arcraiders.wiki
-  const fileNames = guessFileNames(bp.name);
-  for (const fileName of fileNames) {
-    try {
-      const imgUrl = await resolveWikiImageUrl(WIKI_BASE, fileName);
-      if (imgUrl) {
-        await downloadImage(imgUrl, destPng);
-        return { name: bp.name, status: 'downloaded', url: imgUrl };
-      }
-    } catch {
-      // try next
-    }
-  }
-
-  // 3. Generate SVG placeholder
-  const svg = generateSvgPlaceholder(bp.name, bp.category);
-  fs.writeFileSync(destSvg, svg, 'utf8');
-  return { name: bp.name, status: 'placeholder' };
-}
-
 async function main() {
-  console.log(`\n🎮 ARC Blueprint Tracker — Icon Download\n`);
+  console.log('\n🎮 ARC Blueprint Tracker — Icon Download (Fandom wiki)\n');
   console.log(`Icons directory: ${ICONS_DIR}`);
   console.log(`Force re-download: ${FORCE}\n`);
 
-  const CONCURRENCY = 3;
-  const results = { downloaded: 0, placeholder: 0, skip: 0, error: 0 };
+  // Which blueprints still need icons?
+  const pending = FORCE
+    ? BLUEPRINTS
+    : BLUEPRINTS.filter(bp => {
+        const slug = slugify(bp.name);
+        return !fs.existsSync(path.join(ICONS_DIR, `${slug}.png`))
+            && !fs.existsSync(path.join(ICONS_DIR, `${slug}.webp`))
+            && !fs.existsSync(path.join(ICONS_DIR, `${slug}.svg`));
+      });
 
-  // Process in chunks to avoid hammering the wiki
-  for (let i = 0; i < BLUEPRINTS.length; i += CONCURRENCY) {
-    const chunk = BLUEPRINTS.slice(i, i + CONCURRENCY);
-    const settled = await Promise.allSettled(chunk.map(bp => processBlueprint(bp)));
+  if (pending.length === 0) {
+    console.log('✅ All icons already downloaded. Use --force to re-download.\n');
+    return;
+  }
+  console.log(`Fetching icons for ${pending.length} blueprint(s)…\n`);
+
+  // Build all candidate titles we want to resolve, grouped by blueprint
+  // structure: [{ bp, candidates: [title, …] }]
+  const jobs = pending.map(bp => ({ bp, candidates: candidateTitles(bp.name) }));
+
+  // Collect every unique title needed across all jobs
+  const allTitles = [...new Set(jobs.flatMap(j => j.candidates))];
+
+  // Batch-resolve in chunks of 50 (API limit)
+  const resolvedMap = {};
+  const BATCH = 50;
+  for (let i = 0; i < allTitles.length; i += BATCH) {
+    const chunk = allTitles.slice(i, i + BATCH);
+    try {
+      const partial = await batchResolveImages(chunk);
+      Object.assign(resolvedMap, partial);
+    } catch (err) {
+      console.error(`  ⚠️  Batch query failed (titles ${i}–${i + BATCH}): ${err.message}`);
+    }
+    if (i + BATCH < allTitles.length) await delay(400);
+  }
+
+  // Download images in small concurrent batches
+  const results = { downloaded: 0, placeholder: 0, error: 0 };
+  const CONCURRENCY = 4;
+
+  for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+    const chunk   = jobs.slice(i, i + CONCURRENCY);
+    const settled = await Promise.allSettled(chunk.map(({ bp, candidates }) => processOne(bp, candidates, resolvedMap)));
 
     for (const result of settled) {
       if (result.status === 'fulfilled') {
         const r = result.value;
         results[r.status]++;
-        const icon = r.status === 'downloaded' ? '⬇️' : r.status === 'placeholder' ? '🎨' : '⏭️';
-        console.log(`  ${icon}  ${r.name}`);
+        const icon = r.status === 'downloaded' ? '⬇️ ' : r.status === 'placeholder' ? '🎨' : '❌';
+        const src  = r.status === 'downloaded' ? ` (${r.url.split('/revision')[0].split('/').pop()})` : '';
+        console.log(`  ${icon}  ${r.name}${src}`);
       } else {
         results.error++;
-        console.error(`  ❌  Error: ${result.reason?.message}`);
+        console.error(`  ❌  ${result.reason?.message}`);
       }
     }
 
-    // Small delay between batches to be polite to the wiki
-    if (i + CONCURRENCY < BLUEPRINTS.length) {
-      await new Promise(r => setTimeout(r, 300));
-    }
+    if (i + CONCURRENCY < jobs.length) await delay(150);
   }
 
-  console.log(`\n✅ Done!`);
-  console.log(`   Downloaded: ${results.downloaded}`);
+  console.log('\n✅ Done!');
+  console.log(`   Downloaded:       ${results.downloaded}`);
   console.log(`   Placeholder SVGs: ${results.placeholder}`);
-  console.log(`   Skipped: ${results.skip}`);
-  if (results.error > 0) console.log(`   Errors: ${results.error}`);
+  if (results.error) console.log(`   Errors:           ${results.error}`);
   console.log();
 }
 
+async function processOne(bp, candidates, resolvedMap) {
+  const slug    = slugify(bp.name);
+  const destPng = path.join(ICONS_DIR, `${slug}.png`);
+  const destSvg = path.join(ICONS_DIR, `${slug}.svg`);
+
+  // Find the first candidate that resolved to an image URL
+  let imageUrl = null;
+  for (const title of candidates) {
+    if (resolvedMap[title]) { imageUrl = resolvedMap[title]; break; }
+  }
+
+  if (imageUrl) {
+    try {
+      await downloadImage(imageUrl, destPng);
+      return { name: bp.name, status: 'downloaded', url: imageUrl };
+    } catch (err) {
+      // fall through to placeholder
+      console.error(`    ⚠️  Download failed for ${bp.name}: ${err.message}`);
+    }
+  }
+
+  // Write SVG placeholder
+  fs.writeFileSync(destSvg, generateSvgPlaceholder(bp.name, bp.category), 'utf8');
+  return { name: bp.name, status: 'placeholder' };
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 main().catch(err => {
-  // Non-fatal — server runs fine without icons (SVG placeholders are used instead)
-  console.error('[icons] download failed:', err?.message ?? err);
+  // Non-fatal — server starts fine even if icons fail (SVG placeholders shown instead)
+  console.error('[icons] Download failed:', err?.message ?? err);
 });

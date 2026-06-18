@@ -9,23 +9,26 @@ interface Props {
   size?: number;
 }
 
+type IconSrc = 'png' | 'webp' | 'svg' | 'fallback';
+
 export default function BlueprintIcon({ slug, name, category, size = 40 }: Props) {
-  // Try PNG first, then SVG placeholder, then CategoryIcon
-  const [src, setSrc] = useState<'png' | 'svg' | 'fallback'>('png');
+  const [src, setSrc] = useState<IconSrc>('png');
 
   if (src === 'fallback') {
     return <CategoryIcon category={category} size={size <= 28 ? 'sm' : 'md'} />;
   }
 
+  const next: Record<IconSrc, IconSrc> = { png: 'webp', webp: 'svg', svg: 'fallback', fallback: 'fallback' };
+
   return (
     <img
-      src={src === 'png' ? `/icons/${slug}.png` : `/icons/${slug}.svg`}
+      src={`/icons/${slug}.${src}`}
       alt={name}
       width={size}
       height={size}
       className="rounded object-contain"
       style={{ width: size, height: size }}
-      onError={() => setSrc(prev => prev === 'png' ? 'svg' : 'fallback')}
+      onError={() => setSrc(prev => next[prev])}
     />
   );
 }

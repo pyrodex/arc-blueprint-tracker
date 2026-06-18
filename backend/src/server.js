@@ -379,6 +379,25 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Trigger a background icon re-download (non-blocking)
+let iconDownloadRunning = false;
+app.post('/api/icons/refresh', (req, res) => {
+  if (iconDownloadRunning) {
+    return res.json({ status: 'already_running', message: 'Icon download already in progress.' });
+  }
+  iconDownloadRunning = true;
+  const { spawn } = require('child_process');
+  const scriptPath = path.join(__dirname, '../../scripts/download-icons.js');
+  const child = spawn(process.execPath, [scriptPath, '--force'], {
+    env: { ...process.env, DATA_DIR },
+    detached: true,
+    stdio: 'inherit',
+  });
+  child.on('exit', () => { iconDownloadRunning = false; });
+  child.unref();
+  res.json({ status: 'started', message: 'Icon download started in background.' });
+});
+
 // ── Serve frontend ─────────────────────────────────────────────────────────────
 if (fs.existsSync(STATIC_DIR)) {
   app.use(express.static(STATIC_DIR, { maxAge: '1d', etag: true }));
