@@ -15,7 +15,8 @@ export default function BlueprintIcon({ slug, name, category, size = 40 }: Props
   const [src, setSrc] = useState<IconSrc>('png');
 
   if (src === 'fallback') {
-    return <CategoryIcon category={category} size={size <= 28 ? 'sm' : 'md'} />;
+    const catSize = size >= 48 ? 'lg' : size <= 28 ? 'sm' : 'md';
+    return <CategoryIcon category={category} size={catSize} />;
   }
 
   const next: Record<IconSrc, IconSrc> = { png: 'webp', webp: 'svg', svg: 'fallback', fallback: 'fallback' };

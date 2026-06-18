@@ -2,13 +2,14 @@
 'use strict';
 
 /**
- * Downloads blueprint icons from the ARC Raiders Fandom wiki.
+ * Downloads blueprint icons from arcraiders.wiki (the canonical ARC Raiders wiki).
  *
  * Strategy:
- * 1. Batch-query arc-raiders.fandom.com MediaWiki API for blueprint images
- *    — tries "File:[Name] Blueprint.png" then "File:[Name].png" per blueprint
- * 2. Download resolved images to DATA_DIR/icons/<slug>.png
- * 3. For any not found, generate a clean SVG placeholder
+ * 1. Use an explicit name→file mapping derived from the Blueprints page on arcraiders.wiki,
+ *    so every icon points to the exact file the wiki uses.
+ * 2. Batch-resolve image URLs via the arcraiders.wiki MediaWiki API (50 titles per call).
+ * 3. Download to DATA_DIR/icons/<slug>.png
+ * 4. SVG placeholder for any not found.
  *
  * Usage:
  *   DATA_DIR=/data node scripts/download-icons.js [--force]
@@ -24,9 +25,105 @@ const DATA_DIR  = process.env.DATA_DIR || path.join(__dirname, '../data');
 const ICONS_DIR = path.join(DATA_DIR, 'icons');
 const FORCE     = process.argv.includes('--force');
 
-const FANDOM_API = 'https://arc-raiders.fandom.com/api.php';
+const WIKI_API = 'https://arcraiders.wiki/w/api.php';
 
 fs.mkdirSync(ICONS_DIR, { recursive: true });
+
+// ── Explicit blueprint name → wiki File: title mapping ───────────────────────
+// Derived from https://arcraiders.wiki/wiki/Blueprints (grid section, June 2026).
+// Weapons link to their tier-I item image; everything else matches name exactly.
+const NAME_TO_FILE = {
+  // Weapons (tiered — wiki uses the first tier image)
+  'Anvil':          'File:Anvil I.png',
+  'Aphelion':       'File:Aphelion.png',
+  'Bettina':        'File:Bettina I.png',
+  'Bobcat':         'File:Bobcat I.png',
+  'Burletta':       'File:Burletta I.png',
+  'Canto':          'File:Canto I.png',
+  'Deadline':       'File:Deadline.png',
+  'Dolabra':        'File:Dolabra.png',
+  'Equalizer':      'File:Equalizer.png',
+  'Hullcracker':    'File:Hullcracker I.png',
+  'Il Toro':        'File:Il Toro I.png',
+  'Jupiter':        'File:Jupiter.png',
+  'Osprey':         'File:Osprey I.png',
+  'Rascal':         'File:Rascal II.png',       // wiki starts at II for Rascal
+  'Tempest':        'File:Tempest I.png',
+  'Torrente':       'File:Torrente I.png',
+  'Trailblazer':    'File:Trailblazer.png',
+  'Venator':        'File:Venator I.png',
+  'Vulcano':        'File:Vulcano I.png',
+  // Mods
+  'Angled Grip II':           'File:Angled Grip II.png',
+  'Angled Grip III':          'File:Angled Grip III.png',
+  'Compensator II':           'File:Compensator II.png',
+  'Compensator III':          'File:Compensator III.png',
+  'Extended Barrel II':       'File:Extended Barrel II.png',
+  'Extended Barrel III':      'File:Extended Barrel III.png',
+  'Extended Light Mag II':    'File:Extended Light Mag II.png',
+  'Extended Light Mag III':   'File:Extended Light Mag III.png',
+  'Extended Medium Mag II':   'File:Extended Medium Mag II.png',
+  'Extended Medium Mag III':  'File:Extended Medium Mag III.png',
+  'Extended Shotgun Mag II':  'File:Extended Shotgun Mag II.png',
+  'Extended Shotgun Mag III': 'File:Extended Shotgun Mag III.png',
+  'Lightweight Stock':        'File:Lightweight Stock.png',
+  'Muzzle Brake II':          'File:Muzzle Brake II.png',
+  'Muzzle Brake III':         'File:Muzzle Brake III.png',
+  'Padded Stock':             'File:Padded Stock.png',
+  'Shotgun Choke II':         'File:Shotgun Choke II.png',
+  'Shotgun Choke III':        'File:Shotgun Choke III.png',
+  'Shotgun Silencer':         'File:Shotgun Silencer.png',
+  'Silencer I':               'File:Silencer I.png',
+  'Silencer II':              'File:Silencer II.png',
+  'Stable Stock II':          'File:Stable Stock II.png',
+  'Stable Stock III':         'File:Stable Stock III.png',
+  'Vertical Grip II':         'File:Vertical Grip II.png',
+  'Vertical Grip III':        'File:Vertical Grip III.png',
+  // Explosives
+  'Blaze Grenade':   'File:Blaze Grenade.png',
+  'Explosive Mine':  'File:Explosive Mine.png',
+  'Gas Mine':        'File:Gas Mine.png',
+  'Jolt Mine':       'File:Jolt Mine.png',
+  'Lure Grenade':    'File:Lure Grenade.png',
+  'Pulse Mine':      'File:Pulse Mine.png',
+  'Seeker Grenade':  'File:Seeker Grenade.png',
+  'Showstopper':     'File:Showstopper.png',
+  'Smoke Grenade':   'File:Smoke Grenade.png',
+  "Trigger 'Nade":   "File:Trigger 'Nade.png",
+  'Wolfpack':        'File:Wolfpack.png',
+  // Medicine
+  'Defibrillator':  'File:Defibrillator.png',
+  'Vita Shot':      'File:Vita Shot.png',
+  'Vita Spray':     'File:Vita Spray.png',
+  // Augments
+  'Combat Mk. 3 (Aggressive)':   'File:Combat Mk. 3 (Aggressive).png',
+  'Combat Mk. 3 (Flanking)':     'File:Combat Mk. 3 (Flanking).png',
+  'Looting Mk. 3 (Safekeeper)':  'File:Looting Mk. 3 (Safekeeper).png',
+  'Looting Mk. 3 (Survivor)':    'File:Looting Mk. 3 (Survivor).png',
+  'Tactical Mk. 3 (Defensive)':  'File:Tactical Mk. 3 (Defensive).png',
+  'Tactical Mk. 3 (Healing)':    'File:Tactical Mk. 3 (Healing).png',
+  'Tactical Mk. 3 (Revival)':    'File:Tactical Mk. 3 (Revival).png',
+  'Tactical Mk. 3 (Smoke)':      'File:Tactical Mk. 3 (Smoke).png',
+  // Utility
+  'Barricade Kit':       'File:Barricade Kit.png',
+  'Blue Light Stick':    'File:Blue Light Stick.png',
+  'Crash Mat':           'File:Crash Mat.png',
+  'Fireworks Box':       'File:Fireworks Box.png',
+  'Green Light Stick':   'File:Green Light Stick.png',
+  'Powered Descender':   'File:Powered Descender.png',
+  'Red Light Stick':     'File:Red Light Stick.png',
+  'Remote Raider Flare': 'File:Remote Raider Flare.png',
+  'Snap Hook':           'File:Snap Hook.png',
+  'Surge Coil':          'File:Surge Coil.png',
+  'Tagging Grenade':     'File:Tagging Grenade.png',
+  'White Flag':          'File:White Flag.png',
+  'Yellow Light Stick':  'File:Yellow Light Stick.png',
+  // Crafting components
+  'Complex Gun Parts': 'File:Complex Gun Parts.png',
+  'Heavy Gun Parts':   'File:Heavy Gun Parts.png',
+  'Light Gun Parts':   'File:Light Gun Parts.png',
+  'Medium Gun Parts':  'File:Medium Gun Parts.png',
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function slugify(name) {
@@ -64,9 +161,8 @@ function fetchUrl(urlStr, retries = 2) {
     });
     req.on('timeout', () => {
       req.destroy();
-      const err = new Error('Request timed out');
       if (retries > 0) fetchUrl(urlStr, retries - 1).then(resolve).catch(reject);
-      else reject(err);
+      else reject(new Error('Request timed out'));
     });
     req.end();
   });
@@ -83,22 +179,12 @@ async function downloadImage(url, destPath) {
   if (statusCode !== 200) throw new Error(`HTTP ${statusCode}`);
   const ct = headers['content-type'] ?? '';
   if (!ct.startsWith('image/')) throw new Error(`Not an image: ${ct}`);
-  if (body.length < 100) throw new Error(`Suspiciously small response (${body.length} bytes)`);
+  if (body.length < 200) throw new Error(`Suspiciously small (${body.length} bytes)`);
   fs.writeFileSync(destPath, body);
 }
 
-// ── Fandom MediaWiki batch query ───────────────────────────────────────────────
-// Build candidate file titles for a blueprint name (in priority order)
-function candidateTitles(name) {
-  return [
-    `File:${name} Blueprint.png`,
-    `File:${name} Blueprint.webp`,
-    `File:${name}.png`,
-    `File:${name}.webp`,
-  ];
-}
-
-// Query up to 50 titles at once; returns map of title → image URL
+// ── MediaWiki batch image resolution ──────────────────────────────────────────
+// Returns map: normalised file title → direct image URL
 async function batchResolveImages(titles) {
   const params = new URLSearchParams({
     action: 'query',
@@ -108,22 +194,23 @@ async function batchResolveImages(titles) {
     titles: titles.join('|'),
   });
 
-  const data = await fetchJson(`${FANDOM_API}?${params}`);
-  const result = {};
+  const data     = await fetchJson(`${WIKI_API}?${params}`);
+  const resolved = {};
 
   for (const page of Object.values(data?.query?.pages ?? {})) {
-    if (page.missing !== '' && page.imageinfo?.[0]?.url) {
-      // normalise title to match what we queried
-      result[page.title] = page.imageinfo[0].url;
+    if (page.missing === undefined && page.imageinfo?.[0]?.url) {
+      resolved[page.title] = page.imageinfo[0].url;
     }
   }
 
-  // Handle Fandom's title normalisation (spaces ↔ underscores)
-  for (const norm of data?.query?.normalized ?? []) {
-    if (result[norm.to]) result[norm.from] = result[norm.to];
+  // Apply title normalisations (spaces ↔ underscores, capitalisation)
+  for (const norm of (data?.query?.normalized ?? [])) {
+    if (resolved[norm.to] && !resolved[norm.from]) {
+      resolved[norm.from] = resolved[norm.to];
+    }
   }
 
-  return result;
+  return resolved;
 }
 
 // ── SVG placeholder ────────────────────────────────────────────────────────────
@@ -151,7 +238,7 @@ function generateSvgPlaceholder(name, category) {
 const BLUEPRINTS = require('../backend/src/blueprints');
 
 async function main() {
-  console.log('\n🎮 ARC Blueprint Tracker — Icon Download (Fandom wiki)\n');
+  console.log('\n🎮 ARC Blueprint Tracker — Icon Download (arcraiders.wiki)\n');
   console.log(`Icons directory: ${ICONS_DIR}`);
   console.log(`Force re-download: ${FORCE}\n`);
 
@@ -161,59 +248,59 @@ async function main() {
     : BLUEPRINTS.filter(bp => {
         const slug = slugify(bp.name);
         return !fs.existsSync(path.join(ICONS_DIR, `${slug}.png`))
-            && !fs.existsSync(path.join(ICONS_DIR, `${slug}.webp`))
             && !fs.existsSync(path.join(ICONS_DIR, `${slug}.svg`));
       });
 
   if (pending.length === 0) {
-    console.log('✅ All icons already downloaded. Use --force to re-download.\n');
+    console.log('✅ All icons already present. Use --force to re-download.\n');
     return;
   }
   console.log(`Fetching icons for ${pending.length} blueprint(s)…\n`);
 
-  // Build all candidate titles we want to resolve, grouped by blueprint
-  // structure: [{ bp, candidates: [title, …] }]
-  const jobs = pending.map(bp => ({ bp, candidates: candidateTitles(bp.name) }));
+  // Collect the unique File: titles we need to resolve
+  const titlesNeeded = [...new Set(
+    pending.map(bp => NAME_TO_FILE[bp.name]).filter(Boolean)
+  )];
 
-  // Collect every unique title needed across all jobs
-  const allTitles = [...new Set(jobs.flatMap(j => j.candidates))];
-
-  // Batch-resolve in chunks of 50 (API limit)
-  const resolvedMap = {};
-  const BATCH = 50;
-  for (let i = 0; i < allTitles.length; i += BATCH) {
-    const chunk = allTitles.slice(i, i + BATCH);
-    try {
-      const partial = await batchResolveImages(chunk);
-      Object.assign(resolvedMap, partial);
-    } catch (err) {
-      console.error(`  ⚠️  Batch query failed (titles ${i}–${i + BATCH}): ${err.message}`);
-    }
-    if (i + BATCH < allTitles.length) await delay(400);
+  const unmapped = pending.filter(bp => !NAME_TO_FILE[bp.name]);
+  if (unmapped.length) {
+    console.warn(`⚠️  No wiki mapping for: ${unmapped.map(b => b.name).join(', ')}\n`);
   }
 
-  // Download images in small concurrent batches
-  const results = { downloaded: 0, placeholder: 0, error: 0 };
+  // Batch-resolve via MediaWiki API (50 per call)
+  const resolvedMap = {};
+  const BATCH = 50;
+  for (let i = 0; i < titlesNeeded.length; i += BATCH) {
+    const chunk = titlesNeeded.slice(i, i + BATCH);
+    try {
+      Object.assign(resolvedMap, await batchResolveImages(chunk));
+    } catch (err) {
+      console.error(`  ⚠️  API batch failed: ${err.message}`);
+    }
+    if (i + BATCH < titlesNeeded.length) await delay(400);
+  }
+
+  // Download images
+  const results   = { downloaded: 0, placeholder: 0, error: 0 };
   const CONCURRENCY = 4;
 
-  for (let i = 0; i < jobs.length; i += CONCURRENCY) {
-    const chunk   = jobs.slice(i, i + CONCURRENCY);
-    const settled = await Promise.allSettled(chunk.map(({ bp, candidates }) => processOne(bp, candidates, resolvedMap)));
+  for (let i = 0; i < pending.length; i += CONCURRENCY) {
+    const chunk   = pending.slice(i, i + CONCURRENCY);
+    const settled = await Promise.allSettled(chunk.map(bp => processOne(bp, resolvedMap)));
 
     for (const result of settled) {
       if (result.status === 'fulfilled') {
-        const r = result.value;
+        const r    = result.value;
         results[r.status]++;
         const icon = r.status === 'downloaded' ? '⬇️ ' : r.status === 'placeholder' ? '🎨' : '❌';
-        const src  = r.status === 'downloaded' ? ` (${r.url.split('/revision')[0].split('/').pop()})` : '';
-        console.log(`  ${icon}  ${r.name}${src}`);
+        console.log(`  ${icon}  ${r.name}`);
       } else {
         results.error++;
         console.error(`  ❌  ${result.reason?.message}`);
       }
     }
 
-    if (i + CONCURRENCY < jobs.length) await delay(150);
+    if (i + CONCURRENCY < pending.length) await delay(150);
   }
 
   console.log('\n✅ Done!');
@@ -223,35 +310,27 @@ async function main() {
   console.log();
 }
 
-async function processOne(bp, candidates, resolvedMap) {
-  const slug    = slugify(bp.name);
-  const destPng = path.join(ICONS_DIR, `${slug}.png`);
-  const destSvg = path.join(ICONS_DIR, `${slug}.svg`);
-
-  // Find the first candidate that resolved to an image URL
-  let imageUrl = null;
-  for (const title of candidates) {
-    if (resolvedMap[title]) { imageUrl = resolvedMap[title]; break; }
-  }
+async function processOne(bp, resolvedMap) {
+  const slug     = slugify(bp.name);
+  const fileTitle = NAME_TO_FILE[bp.name];
+  const imageUrl  = fileTitle ? resolvedMap[fileTitle] : null;
 
   if (imageUrl) {
+    const dest = path.join(ICONS_DIR, `${slug}.png`);
     try {
-      await downloadImage(imageUrl, destPng);
-      return { name: bp.name, status: 'downloaded', url: imageUrl };
+      await downloadImage(imageUrl, dest);
+      return { name: bp.name, status: 'downloaded' };
     } catch (err) {
-      // fall through to placeholder
       console.error(`    ⚠️  Download failed for ${bp.name}: ${err.message}`);
     }
   }
 
-  // Write SVG placeholder
-  fs.writeFileSync(destSvg, generateSvgPlaceholder(bp.name, bp.category), 'utf8');
+  fs.writeFileSync(path.join(ICONS_DIR, `${slug}.svg`), generateSvgPlaceholder(bp.name, bp.category), 'utf8');
   return { name: bp.name, status: 'placeholder' };
 }
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 main().catch(err => {
-  // Non-fatal — server starts fine even if icons fail (SVG placeholders shown instead)
   console.error('[icons] Download failed:', err?.message ?? err);
 });

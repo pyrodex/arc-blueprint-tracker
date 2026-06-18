@@ -80,7 +80,7 @@ function UnlearnedReport() {
                 <tr key={bp.id} className="border-b border-arc-border/40 hover:bg-arc-hover/40 transition-colors">
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      <BlueprintIcon slug={bp.slug} name={bp.name} category={bp.category} size={24} />
+                      <BlueprintIcon slug={bp.slug} name={bp.name} category={bp.category} size={32} />
                       <span className="text-arc-text font-medium">{bp.name}</span>
                     </div>
                   </td>
@@ -142,7 +142,7 @@ function ExtrasInventory() {
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-arc-hover/40 transition-colors text-left"
                 onClick={() => toggle(bp.blueprint_id)}
               >
-                <BlueprintIcon slug={bp.slug} name={bp.blueprint_name} category={bp.category} size={28} />
+                <BlueprintIcon slug={bp.slug} name={bp.blueprint_name} category={bp.category} size={40} />
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-medium text-arc-text">{bp.blueprint_name}</span>
                   <span className="ml-2 hidden sm:inline"><CategoryBadge category={bp.category} /></span>

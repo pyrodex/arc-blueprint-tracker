@@ -2,7 +2,7 @@ import type { BlueprintCategory } from '../types';
 
 interface Props {
   category: BlueprintCategory;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
 }
 
 const CATEGORY_META: Record<BlueprintCategory, { label: string; emoji: string; bg: string; text: string; border: string }> = {
@@ -21,7 +21,9 @@ export function categoryMeta(category: BlueprintCategory) {
 
 export default function CategoryIcon({ category, size = 'md' }: Props) {
   const meta = categoryMeta(category);
-  const dim = size === 'sm' ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm';
+  const dim  = size === 'sm' ? 'w-6 h-6 text-xs'
+             : size === 'lg' ? 'w-13 h-13 text-2xl'
+             :                 'w-8 h-8 text-sm';
   return (
     <div className={`${dim} rounded-lg ${meta.bg} border ${meta.border} flex items-center justify-center shrink-0`}>
       <span role="img" aria-label={meta.label}>{meta.emoji}</span>

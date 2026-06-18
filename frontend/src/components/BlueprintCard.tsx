@@ -28,8 +28,8 @@ export default function BlueprintCard({ blueprint, trackingMap, onToggleLearned,
     <div className={`card p-3 flex items-start gap-3 transition-all group
       ${learned ? 'border-arc-learned/30 bg-arc-learned/5' : 'hover:border-arc-muted/40'}`}
     >
-      <div className="shrink-0 mt-0.5">
-        <BlueprintIcon slug={blueprint.slug} name={blueprint.name} category={blueprint.category} size={36} />
+      <div className="shrink-0">
+        <BlueprintIcon slug={blueprint.slug} name={blueprint.name} category={blueprint.category} size={52} />
       </div>
 
       <div className="flex-1 min-w-0">
