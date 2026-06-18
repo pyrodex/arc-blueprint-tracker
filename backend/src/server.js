@@ -20,6 +20,9 @@ fs.mkdirSync(ICONS_DIR, { recursive: true });
 
 // ── Security middleware ────────────────────────────────────────────────────────
 app.use(helmet({
+  // HSTS is handled by the reverse proxy — setting it on a plain HTTP server
+  // causes browsers to upgrade asset requests to HTTPS, breaking the page.
+  hsts: false,
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
@@ -32,9 +35,7 @@ app.use(helmet({
       workerSrc: ["'self'", 'blob:'],
     },
   },
-  // Allow embedding in reverse proxy iframes if needed
   crossOriginEmbedderPolicy: false,
-  // Don't set COEP which can block subresource loads
   crossOriginOpenerPolicy: false,
 }));
 
