@@ -24,6 +24,9 @@ app.use(helmet({
   // causes browsers to upgrade asset requests to HTTPS, breaking the page.
   hsts: false,
   contentSecurityPolicy: {
+    // Helmet v7 merges upgrade-insecure-requests into the CSP by default,
+    // which forces all assets to HTTPS even on a plain HTTP server.
+    useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
@@ -33,6 +36,10 @@ app.use(helmet({
       connectSrc: ["'self'"],
       fontSrc: ["'self'", 'data:'],
       workerSrc: ["'self'", 'blob:'],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      objectSrc: ["'none'"],
     },
   },
   crossOriginEmbedderPolicy: false,
