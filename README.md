@@ -1,18 +1,35 @@
 # ARC Blueprint Tracker
 
-A self-hosted web tool for tracking learned and extra blueprints across multiple characters in ARC Raiders.
+A self-hosted web tool for tracking learned and extra blueprints across multiple characters in [ARC Raiders](https://arcraiders.com/).
 
 ## Features
 
-- **83 blueprints** seeded from [arcraiders.wiki](https://arcraiders.wiki/wiki/Blueprints) across 7 categories (Weapons, Mods, Explosives, Medicine, Augments, Utility, Crafting)
-- **Multiple characters** with labels (Wipe, Non-Wipe, Mule, PvP, etc.) and custom colors
-- **Per-character tracking** — mark blueprints as Learned/Consumed and track extra copies with +/– controls
-- **Reports**:
-  - *Unlearned* — which blueprints aren't learned by which characters
-  - *Extras Inventory* — total extras by blueprint with per-character drill-down
-- **Blueprint icons** — auto-downloaded from the wiki on first startup; SVG placeholders generated for any not found
-- **Single Docker container** — frontend (React + Tailwind) served by the same Node.js/Express backend
-- Persistent SQLite database in a named Docker volume
+### Blueprint Tracking
+- **83 blueprints** seeded from [arcraiders.wiki](https://arcraiders.wiki/wiki/Blueprints) across 7 categories: Weapons, Mods, Explosives, Medicine, Augments, Utility, and Crafting
+- **Per-character tracking** — mark each blueprint as Learned/Consumed and track extra copies with +/– controls or direct input
+- **Quick learn/unlearn all** — bulk-toggle all visible blueprints for a character in one click
+- **Blueprint icons** — downloaded from arcraiders.wiki on first startup using an explicit name→file mapping; SVG category-icon placeholders generated for any not found
+- **Alphabetical ordering** — all blueprint lists are sorted A→Z regardless of category filter
+
+### Characters
+- **Multi-character support** — add as many characters as you need
+- **Multi-select labels** — assign one or more labels per character from presets (Wipe, Non-Wipe, Mule, PvP, PvE, HC, Leveling, Trade) or create custom labels
+- **Color coding** — pick from preset colors or a custom color picker; colors appear throughout the UI
+
+### Blueprints Page
+- **Filter by category** — Weapons, Mods, Explosives, Medicine, Augments, Utility, Crafting, or All
+- **Filter by status** — All, Learned, or Not Learned
+- **Full-text search** — filter blueprints by name in real time
+- **Character switcher** — switch between characters without leaving the page
+
+### Reports
+- **Unlearned Blueprints** — collapsible rows showing which blueprints are missing for at least one character; expand any row to see each character's ✓/✗ status with name and labels
+- **Extras Inventory** — total extras per blueprint sorted by count; expand to drill down into which characters hold extras and how many
+
+### UI & Themes
+- **Dark, Light, and System/Auto** color schemes — toggle between dark (default), light, or follow the OS preference; choice persisted in `localStorage`
+- **Responsive layout** — sidebar navigation with an ARC Raiders–inspired logo mark
+- **Modern design** — built with Tailwind CSS, smooth transitions, and consistent arc-themed color tokens
 
 ## Quick Start
 
@@ -29,7 +46,7 @@ Pin to a specific release:
 IMAGE_TAG=v1.0.0 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-Open http://localhost:3001
+Open <http://localhost:3001>
 
 ### Docker — build locally from source
 
@@ -46,24 +63,23 @@ HOST_PORT=8080 docker compose up -d
 ### Development
 
 ```bash
-# Terminal 1 — backend
-cd backend
-npm install
-npm run dev       # starts on :3001
+# Terminal 1 — backend (starts on :3001)
+cd backend && npm install && npm run dev
 
-# Terminal 2 — frontend (proxies /api → :3001)
-cd frontend
-npm install
-npm run dev       # starts on :5173
+# Terminal 2 — frontend (proxies /api → :3001, starts on :5173)
+cd frontend && npm install && npm run dev
 ```
 
 ### Re-download icons
 
 ```bash
-# Inside the running container
+# Trigger a re-download from a running container via the API
+curl -X POST http://localhost:3001/api/icons/refresh
+
+# Or exec into the container directly
 docker compose exec arc-tracker node /app/scripts/download-icons.js --force
 
-# Or locally (downloads to ./data/icons/)
+# Or run locally (downloads to ./data/icons/)
 DATA_DIR=./data node scripts/download-icons.js
 ```
 
@@ -73,69 +89,77 @@ DATA_DIR=./data node scripts/download-icons.js
 arc-blueprint-tracker/
 ├── backend/
 │   └── src/
-│       ├── server.js       Express API + static file serving
-│       ├── db.js           better-sqlite3 setup + schema + seed
-│       └── blueprints.js   Seed data (83 blueprints)
+│       ├── server.js          Express API + static file serving
+│       ├── db.js              better-sqlite3 setup, schema, and seed
+│       └── blueprints.js      Seed data (83 blueprints)
 ├── frontend/
 │   └── src/
-│       ├── pages/          Dashboard, Characters, Blueprints, Reports
-│       ├── components/     BlueprintCard, Modal, CategoryIcon, …
-│       ├── hooks/useApi.ts TanStack Query hooks for all API calls
-│       └── types/          TypeScript types
+│       ├── pages/             Dashboard, Characters, Blueprints, Reports
+│       ├── components/        BlueprintCard, BlueprintIcon, CategoryIcon,
+│       │                      CharacterForm, Layout, Modal, ThemeToggle, …
+│       ├── hooks/
+│       │   ├── useApi.ts      TanStack Query hooks for all API calls
+│       │   └── useTheme.ts    Dark/light/system theme hook
+│       └── types/             TypeScript interfaces
 ├── scripts/
-│   └── download-icons.js   Wiki icon downloader with SVG fallback
-├── Dockerfile              Multi-stage build
-└── docker-compose.yml      Production deployment
+│   └── download-icons.js      arcraiders.wiki icon downloader + SVG fallback
+├── Dockerfile                 Multi-stage build (frontend → backend → runtime)
+├── docker-compose.yml         Local build deployment
+└── docker-compose.ghcr.yml    GHCR pre-built image deployment
 ```
 
 ## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/blueprints` | All blueprints (filter: `?category=weapons&in_game=true`) |
-| GET | `/api/blueprints/categories` | Category counts |
+| GET | `/api/blueprints` | All blueprints (query: `?category=weapons&in_game=true`) |
+| GET | `/api/blueprints/categories` | Category list with counts |
 | GET | `/api/characters` | All characters |
-| POST | `/api/characters` | Create character |
-| PUT | `/api/characters/:id` | Update character |
-| DELETE | `/api/characters/:id` | Delete character |
-| GET | `/api/tracking/:characterId` | Tracking for a character |
-| POST | `/api/tracking` | Upsert single tracking record |
-| POST | `/api/tracking/batch` | Upsert up to 500 records |
+| POST | `/api/characters` | Create a character |
+| PUT | `/api/characters/:id` | Update a character |
+| DELETE | `/api/characters/:id` | Delete a character and all its tracking data |
+| GET | `/api/tracking/:characterId` | All tracking records for a character |
+| POST | `/api/tracking` | Upsert a single tracking record |
+| POST | `/api/tracking/batch` | Upsert up to 500 records at once |
 | GET | `/api/reports/summary` | Dashboard summary stats |
 | GET | `/api/reports/unlearned` | Unlearned blueprints with per-character status |
 | GET | `/api/reports/extras` | Extras by blueprint with character breakdown |
-| GET | `/icons/:slug.png` | Blueprint icon (or 404 → falls back to SVG) |
+| POST | `/api/icons/refresh` | Trigger a background icon re-download |
+| GET | `/health` | Server health check (status, blueprint/character counts, uptime) |
+| GET | `/icons/:slug.png` | Blueprint icon PNG |
+| GET | `/icons/:slug.svg` | Blueprint icon SVG placeholder |
 
 ## Security
 
-- **Helmet.js** — CSP, HSTS, X-Frame-Options, and other HTTP security headers
-- **Rate limiting** — 300 req/min reads, 120 req/min writes per IP
-- **Parameterized SQL** — no SQL injection risk (better-sqlite3)
+- **Helmet.js** — CSP, X-Frame-Options, and other HTTP security headers (HSTS intentionally disabled; handled by the reverse proxy)
+- **Rate limiting** — 300 req/min reads, 120 req/min writes per IP via `express-rate-limit`
+- **Parameterized SQL** — no SQL injection risk (`better-sqlite3` prepared statements)
 - **Non-root container user** — runs as `arcapp` (uid 1001)
-- **Read-only root filesystem** — only `/data` and `/tmp` are writable
-- **All capabilities dropped** — `cap_drop: ALL`
-- **No authentication** — designed to sit behind a reverse proxy (nginx, Caddy, Traefik) that handles auth
+- **Read-only root filesystem** — only `/data` and `/tmp` are writable at runtime
+- **All capabilities dropped** — `cap_drop: ALL` in Docker Compose
+- **No built-in authentication** — designed to sit behind a reverse proxy (nginx, Caddy, Traefik) that handles auth
 
 ## CI/CD
 
-A GitHub Actions workflow (`.github/workflows/docker-build.yml`) automatically builds and publishes the image to GitHub Container Registry on every push to `main`:
+A GitHub Actions workflow (`.github/workflows/docker-build.yml`) automatically builds and publishes multi-platform images to GitHub Container Registry on every push to `main`.
 
 | Event | What happens |
 |-------|-------------|
-| Push to `main` | Build for `linux/amd64` + `linux/arm64`, push `latest` + `sha-<short>` tags |
+| Push to `main` | Build for `linux/amd64` + `linux/arm64` on native runners, push `latest` + `sha-<short>` tags |
 | Push a `v*.*.*` tag | Also publish semver tags (`1.2.3`, `1.2`, `1`) |
 | Pull request | Build only (no push) to validate the Dockerfile |
 
-Layer caching via GitHub Actions cache keeps builds fast after the first run.
+Builds use native ARM64 runners (no QEMU emulation) and GitHub Actions layer caching for fast rebuilds.
 
 The image is published at:
+
 ```
 ghcr.io/pyrodex/arc-blueprint-tracker
 ```
 
 ## Reverse Proxy Example (Caddy)
 
-```
+```caddy
 blueprint.yourdomain.com {
     basicauth * {
         youruser JDJhJDE0...
@@ -143,3 +167,8 @@ blueprint.yourdomain.com {
     reverse_proxy localhost:3001
 }
 ```
+
+## Data Source
+
+Blueprint data and icons sourced from [arcraiders.wiki](https://arcraiders.wiki/wiki/Blueprints).
+This project is not affiliated with Embark Studios or ARC Raiders.
