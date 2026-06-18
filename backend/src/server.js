@@ -104,7 +104,7 @@ app.get('/api/blueprints', (req, res) => {
     params.push(in_game === 'true' || in_game === '1' ? 1 : 0);
   }
   if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-  query += ' ORDER BY sort_order, name';
+  query += ' ORDER BY name COLLATE NOCASE';
 
   const blueprints = db.prepare(query).all(...params);
   res.json(blueprints);
