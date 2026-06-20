@@ -27,6 +27,10 @@ RUN npm install --omit=dev --prefer-offline
 # ── Stage 3: Production image ──────────────────────────────────────────────────
 FROM node:22-alpine AS runner
 
+# Upgrade npm so its bundled tar meets CVE-2026-53655 fix (tar >= 7.5.16).
+# node:22-alpine ships with npm@10.x which bundles tar@7.5.15.
+RUN npm install -g npm@latest --ignore-scripts
+
 # Security: don't run as root
 RUN addgroup -g 1001 -S arcapp && adduser -u 1001 -S arcapp -G arcapp
 
