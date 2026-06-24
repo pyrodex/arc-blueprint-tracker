@@ -207,7 +207,13 @@ function ExtrasInventory({ selectedCharId }: { selectedCharId: number | null }) 
 
   const filtered = selectedCharId === null
     ? data
-    : data.filter(bp => bp.character_breakdown.some(cb => cb.character_id === selectedCharId && cb.extras > 0));
+    : data
+        .filter(bp => bp.character_breakdown.some(cb => cb.character_id === selectedCharId && cb.extras > 0))
+        .sort((a, b) => {
+          const aCount = a.character_breakdown.find(cb => cb.character_id === selectedCharId)?.extras ?? 0;
+          const bCount = b.character_breakdown.find(cb => cb.character_id === selectedCharId)?.extras ?? 0;
+          return bCount - aCount;
+        });
 
   const selectedChar = selectedCharId !== null ? characters.find(c => c.id === selectedCharId) : null;
 
