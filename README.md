@@ -60,7 +60,7 @@ docker compose -f docker-compose.ghcr.yml up -d
 Pin to a specific release:
 
 ```bash
-IMAGE_TAG=v1.1.0 docker compose -f docker-compose.ghcr.yml up -d
+IMAGE_TAG=v1.1.1 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
 Open <http://localhost:3001>
@@ -196,6 +196,10 @@ Blueprint and ARC parts data sourced from [arcraiders.wiki](https://arcraiders.w
 This project is not affiliated with Embark Studios or ARC Raiders.
 
 ## Changelog
+
+### v1.1.1
+- Fix browser tab title still showing "ARC Blueprint Tracker" (now "ARC Tracker")
+- Fix remaining "blueprint tracker" references in Dashboard subtitle, Characters page description, empty-state messages, and delete confirmation dialog
 
 ### v1.1.0
 - **ARC Parts tracking** — new section for Epic and Legendary drops (Queen Reactor, Matriarch Reactor, Bastion Cell, Bombardier Cell, Leaper Pulse Unit, Rocketeer Driver, Vaporizer Regulator, Turbine Compressor, Assessor Matrix)
