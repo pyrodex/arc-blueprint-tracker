@@ -60,7 +60,7 @@ docker compose -f docker-compose.ghcr.yml up -d
 Pin to a specific release:
 
 ```bash
-IMAGE_TAG=v1.1.0 docker compose -f docker-compose.ghcr.yml up -d
+IMAGE_TAG=v1.1.1 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
 Open <http://localhost:3001>
