@@ -62,6 +62,7 @@ export interface SummaryCharacter {
   total_extras: number;
   total_blueprints: number;
   total_arc_parts: number;
+  arc_parts_value: number;
 }
 
 export interface Summary {
@@ -143,6 +144,7 @@ export interface CharacterArcCount {
   character_label: string | null;
   character_color: string;
   count: number;
+  value: number;
 }
 
 export interface ArcPartsReport {
@@ -151,7 +153,9 @@ export interface ArcPartsReport {
   slug: string;
   rarity: ArcPartRarity;
   source: string;
+  sell_value: number;
   total_count: number;
+  total_value: number;
   character_breakdown: CharacterArcCount[];
 }
 

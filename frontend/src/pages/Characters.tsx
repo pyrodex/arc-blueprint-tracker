@@ -96,6 +96,11 @@ export default function Characters() {
                       </span>
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-400" title="ARC Parts collected">
                         <Cpu className="w-3 h-3" />{s.total_arc_parts}
+                        {s.arc_parts_value > 0 && (
+                          <span className="text-arc-extra font-medium">
+                            ({s.arc_parts_value.toLocaleString()})
+                          </span>
+                        )}
                       </span>
                     </div>
                   );

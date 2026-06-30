@@ -325,8 +325,13 @@ function ArcPartsInventory({ selectedCharId }: { selectedCharId: number | null }
 
   const totalCount = filtered.reduce((s, p) => {
     if (selectedCharId === null) return s + p.total_count;
-    const cb = p.character_breakdown.find(c => c.character_id === selectedCharId);
-    return s + (cb?.count ?? 0);
+    return s + (p.character_breakdown.find(cb => cb.character_id === selectedCharId)?.count ?? 0);
+  }, 0);
+
+  const totalValue = filtered.reduce((s, p) => {
+    if (selectedCharId === null) return s + p.total_value;
+    const count = p.character_breakdown.find(cb => cb.character_id === selectedCharId)?.count ?? 0;
+    return s + count * p.sell_value;
   }, 0);
 
   const toggle = (id: number) => setExpanded(prev => {
@@ -343,11 +348,18 @@ function ArcPartsInventory({ selectedCharId }: { selectedCharId: number | null }
 
   return (
     <div>
-      <p className="text-sm text-arc-muted mb-4">
-        <span className="text-arc-text font-semibold">{totalCount}</span> total part{totalCount !== 1 ? 's' : ''} across{' '}
-        <span className="text-arc-text font-semibold">{filtered.length}</span> type{filtered.length !== 1 ? 's' : ''}
-        {selectedChar ? <> for <span className="font-semibold" style={{ color: selectedChar.color }}>{selectedChar.name}</span></> : ''}.
-      </p>
+      <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+        <p className="text-sm text-arc-muted">
+          <span className="text-arc-text font-semibold">{totalCount}</span> part{totalCount !== 1 ? 's' : ''} across{' '}
+          <span className="text-arc-text font-semibold">{filtered.length}</span> type{filtered.length !== 1 ? 's' : ''}
+          {selectedChar ? <> for <span className="font-semibold" style={{ color: selectedChar.color }}>{selectedChar.name}</span></> : ''}.
+        </p>
+        {totalValue > 0 && (
+          <p className="text-sm font-semibold text-arc-extra tabular-nums">
+            {totalValue.toLocaleString()} total value
+          </p>
+        )}
+      </div>
 
       <div className="card overflow-hidden divide-y divide-arc-border/50">
         {[...filtered].sort((a, b) => (rarityOrder[a.rarity] ?? 9) - (rarityOrder[b.rarity] ?? 9)).map((part: ArcPartsReport) => {
@@ -355,6 +367,9 @@ function ArcPartsInventory({ selectedCharId }: { selectedCharId: number | null }
           const displayCount = selectedCharId === null
             ? part.total_count
             : (part.character_breakdown.find(cb => cb.character_id === selectedCharId)?.count ?? 0);
+          const displayValue = selectedCharId === null
+            ? part.total_value
+            : (part.character_breakdown.find(cb => cb.character_id === selectedCharId)?.value ?? 0);
 
           const badgeClass = part.rarity === 'legendary'
             ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
@@ -374,9 +389,14 @@ function ArcPartsInventory({ selectedCharId }: { selectedCharId: number | null }
                   </span>
                   <p className="text-xs text-arc-dim mt-0.5">from {part.source}</p>
                 </div>
-                <span className={`badge text-sm font-bold px-3 shrink-0 ${badgeClass}`}>
-                  ×{displayCount}
-                </span>
+                <div className="text-right shrink-0">
+                  <p className={`badge text-sm font-bold px-3 ${badgeClass}`}>×{displayCount}</p>
+                  {displayValue > 0 && (
+                    <p className="text-xs text-arc-extra font-semibold tabular-nums mt-0.5">
+                      {displayValue.toLocaleString()}
+                    </p>
+                  )}
+                </div>
                 {isOpen
                   ? <ChevronDown  className="w-4 h-4 text-arc-muted shrink-0" />
                   : <ChevronRight className="w-4 h-4 text-arc-muted shrink-0" />
@@ -404,6 +424,11 @@ function ArcPartsInventory({ selectedCharId }: { selectedCharId: number | null }
                           <span className="text-sm font-bold font-mono ml-1" style={{ color: cb.character_color }}>
                             ×{cb.count}
                           </span>
+                          {cb.value > 0 && (
+                            <span className="text-xs text-arc-extra tabular-nums">
+                              {cb.value.toLocaleString()}
+                            </span>
+                          )}
                         </div>
                       ))}
                   </div>
