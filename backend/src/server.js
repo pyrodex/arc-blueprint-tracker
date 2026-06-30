@@ -297,17 +297,24 @@ app.get('/api/reports/summary', (req, res) => {
     ORDER BY c.sort_order, c.created_at
   `).all(totalBlueprints);
 
-  // Attach ARC parts totals per character
+  // Attach ARC parts totals + value per character
   const arcPartTotals = db.prepare(`
-    SELECT character_id, COALESCE(SUM(count), 0) as total_arc_parts
-    FROM arc_parts_tracking
-    GROUP BY character_id
+    SELECT
+      apt.character_id,
+      COALESCE(SUM(apt.count), 0)                       as total_arc_parts,
+      COALESCE(SUM(apt.count * ap.sell_value), 0)       as arc_parts_value
+    FROM arc_parts_tracking apt
+    JOIN arc_parts ap ON ap.id = apt.part_id
+    GROUP BY apt.character_id
   `).all();
-  const arcByChar = Object.fromEntries(arcPartTotals.map(r => [r.character_id, r.total_arc_parts]));
+  const arcByChar = Object.fromEntries(
+    arcPartTotals.map(r => [r.character_id, { total_arc_parts: r.total_arc_parts, arc_parts_value: r.arc_parts_value }])
+  );
 
   const characters = characterStats.map(c => ({
     ...c,
-    total_arc_parts: arcByChar[c.id] ?? 0,
+    total_arc_parts:  arcByChar[c.id]?.total_arc_parts  ?? 0,
+    arc_parts_value:  arcByChar[c.id]?.arc_parts_value  ?? 0,
   }));
 
   res.json({ totalBlueprints, totalCharacters, characters });
@@ -415,19 +422,22 @@ app.get('/api/arc-parts/tracking/:characterId', (req, res) => {
 app.get('/api/reports/arc-parts', (req, res) => {
   const rows = db.prepare(`
     SELECT
-      ap.id   as part_id,
-      ap.name as part_name,
+      ap.id         as part_id,
+      ap.name       as part_name,
       ap.slug,
       ap.rarity,
       ap.source,
-      SUM(apt.count) as total_count,
+      ap.sell_value,
+      SUM(apt.count)                     as total_count,
+      SUM(apt.count) * ap.sell_value     as total_value,
       JSON_GROUP_ARRAY(
         JSON_OBJECT(
           'character_id',    c.id,
           'character_name',  c.name,
           'character_label', c.label,
           'character_color', c.color,
-          'count',           apt.count
+          'count',           apt.count,
+          'value',           apt.count * ap.sell_value
         )
       ) as character_breakdown
     FROM arc_parts_tracking apt
